@@ -1,10 +1,10 @@
-
 // 顯示設定：讓 x>0 出現在畫面右側（右腦在右）
 const X_RIGHT_ON_SCREEN_RIGHT = true;
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as nifti from 'nifti-reader-js'
 import { apiUrl } from '../lib/api'
+import { BrainVolume3D } from './BrainVolume3D'
 
 const MNI_BG_URL = `${import.meta.env.BASE_URL}static/mni_2mm.nii.gz`
 
@@ -46,6 +46,7 @@ export function NiiViewer({ query }) {
     return { x: vm[0], y: vm[1], z: vm[2] }
   }
   const [dims, setDims] = useState([0,0,0]) // canvas dims (prefer BG; overlay only if same dims)
+  const [volumeData, setVolumeData] = useState({ background: null, activation: null })
 
   // slice indices (voxel coordinates in [0..N-1])
   const [ix, setIx] = useState(0) // sagittal (X)
@@ -129,7 +130,7 @@ export function NiiViewer({ query }) {
     const vx = Math.abs(header.pixDims?.[1] ?? 1)
     const vy = Math.abs(header.pixDims?.[2] ?? 1)
     const vz = Math.abs(header.pixDims?.[3] ?? 1)
-    return { data: f32, dims:[nx,ny,nz], voxelMM:[vx,vy,vz], min: mn, max: mx }
+    return { data: f32, niftiBuffer: ab, dims:[nx,ny,nz], voxelMM:[vx,vy,vz], min: mn, max: mx }
   }
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
@@ -179,6 +180,7 @@ const coord2idx = (c_mm, n, axis) => {
         const bg = await loadNifti(MNI_BG_URL)
         if (!alive) return
         bgRef.current = bg
+        setVolumeData(current => ({ ...current, background: bg }))
         // Always prefer BG dims for the canvas
         setDims(bg.dims)
         const [nx,ny,nz] = bg.dims
@@ -209,14 +211,20 @@ const coord2idx = (c_mm, n, axis) => {
 
 // load meta-analytic map when query/params change
   useEffect(() => {
-    if (!mapUrl) { mapRef.current = null; return }
+    if (!mapUrl) {
+      mapRef.current = null
+      setVolumeData(current => ({ ...current, activation: null }))
+      return
+    }
     let alive = true
     setLoadingMap(true); setErrMap('')
+    setVolumeData(current => ({ ...current, activation: null }))
     ;(async () => {
       try {
         const mv = await loadNifti(mapUrl)
         if (!alive) return
         mapRef.current = mv
+        setVolumeData(current => ({ ...current, activation: mv }))
         if (!bgRef.current) {
           setDims(mv.dims)
           const [nx,ny,nz] = mv.dims
@@ -482,7 +490,7 @@ const coord2idx = (c_mm, n, axis) => {
       {/* --- Brain views --- */}
       <div className='viewer__slice-intro'>
         <span><b>MNI152</b> · 2 mm template</span>
-        <span>Click a slice to move the crosshair</span>
+        <span>3D overview · coordinates linked to slices</span>
       </div>
       {(loadingBG || loadingMap) && (
         <div className='grid gap-3 lg:grid-cols-3'>
@@ -498,17 +506,28 @@ const coord2idx = (c_mm, n, axis) => {
         </div>
       )}
 
+      <BrainVolume3D
+        background={volumeData.background}
+        activation={volumeData.activation}
+        threshold={mapThreshold}
+        opacity={overlayAlpha}
+        coordinates={[Number(cx) || 0, Number(cy) || 0, Number(cz) || 0]}
+      />
+
       {!!nx && (
-        <div className='viewer__slices grid grid-cols-3 gap-3'>
-          {sliceConfigs.map(({ key, name, axisLabel, index, setIndex, max, canvasRef }) => (
-            <div key={key} className='viewer__slice flex flex-col gap-2'>
-              <div className='viewer__slice-label text-xs text-gray-600'>{name}<span>{axisLabel}</span></div>
-              <div className='flex items-center gap-2'>
-                <canvas ref={canvasRef} aria-label={`${name} brain slice; click to move crosshair`} className='h-64 w-full rounded-xl border' onClick={(e)=>onCanvasClick(e, key)} style={{ cursor: 'crosshair' }} />
+        <details className='viewer__slice-details'>
+          <summary>Reference slices <span>Click a slice to move the shared crosshair</span></summary>
+          <div className='viewer__slices grid grid-cols-3 gap-3'>
+            {sliceConfigs.map(({ key, name, axisLabel, canvasRef }) => (
+              <div key={key} className='viewer__slice flex flex-col gap-2'>
+                <div className='viewer__slice-label text-xs text-gray-600'>{name}<span>{axisLabel}</span></div>
+                <div className='flex items-center gap-2'>
+                  <canvas ref={canvasRef} aria-label={`${name} brain slice; click to move crosshair`} className='h-64 w-full rounded-xl border' onClick={(e)=>onCanvasClick(e, key)} style={{ cursor: 'crosshair' }} />
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </details>
       )}
 
       {/* map generation params */}
