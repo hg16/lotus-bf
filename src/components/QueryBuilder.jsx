@@ -1,5 +1,10 @@
 export function QueryBuilder({ query, setQuery }) {
   const append = (token) => setQuery((q) => (q ? `${q} ${token}` : token));
+  const starters = [
+    { label: 'Emotion', value: 'emotion' },
+    { label: 'Working memory', value: 'working memory' },
+    { label: 'Emotion + posterior cingulate', value: 'emotion AND [0,-52,26]' },
+  ];
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -49,6 +54,21 @@ export function QueryBuilder({ query, setQuery }) {
       </div>
 
       <p className="qb__tip">Use <b>AND</b>, <b>OR</b>, and <b>NOT</b>. Enter a location as <code>[x,y,z]</code>.</p>
+
+      <div className="qb__starters" aria-label="Starter queries">
+        <span className="qb__starters-label">START WITH</span>
+        {starters.map((starter) => (
+          <button
+            key={starter.label}
+            type="button"
+            className="qb__starter"
+            onClick={() => setQuery(starter.value)}
+            aria-label={`Search ${starter.value}`}
+          >
+            {starter.label}<span aria-hidden="true">↗</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

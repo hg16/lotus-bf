@@ -410,7 +410,8 @@ const coord2idx = (c_mm, n, axis) => {
       </div>
 
       {/* --- Threshold mode & value --- */}
-      <div className='rounded-xl border p-3 text-sm'>
+      <div className='viewer__control-card viewer__control-card--threshold'>
+        <div className='viewer__control-title'><span>MAP DISPLAY</span><b>01</b></div>
         <label className='flex items-center gap-2'>
           <span>Threshold mode</span>
           <select value={thrMode} onChange={e=>setThrMode(e.target.value)} className='rounded-lg border px-2 py-1'>
@@ -438,7 +439,7 @@ const coord2idx = (c_mm, n, axis) => {
         )}
 
         {/* Neurosynth-style coordinate inputs (signed, centered at 0) */}
-        <div className='mt-1 flex items-center gap-4'>
+        <div className='viewer__coordinates mt-1 flex items-center gap-4'>
           <label className='flex items-center'>
             <span className={nsLabelCls}>X (mm):</span>
             <input
@@ -479,6 +480,10 @@ const coord2idx = (c_mm, n, axis) => {
       </div>
 
       {/* --- Brain views --- */}
+      <div className='viewer__slice-intro'>
+        <span><b>MNI152</b> · 2 mm template</span>
+        <span>Click a slice to move the crosshair</span>
+      </div>
       {(loadingBG || loadingMap) && (
         <div className='grid gap-3 lg:grid-cols-3'>
           {Array.from({ length: 3 }).map((_, i) => (
@@ -494,12 +499,12 @@ const coord2idx = (c_mm, n, axis) => {
       )}
 
       {!!nx && (
-        <div className='grid grid-cols-3 gap-3' style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+        <div className='viewer__slices grid grid-cols-3 gap-3'>
           {sliceConfigs.map(({ key, name, axisLabel, index, setIndex, max, canvasRef }) => (
-            <div key={key} className='flex flex-col gap-2'>
-              <div className='text-xs text-gray-600'>{name} ({axisLabel})</div>
+            <div key={key} className='viewer__slice flex flex-col gap-2'>
+              <div className='viewer__slice-label text-xs text-gray-600'>{name}<span>{axisLabel}</span></div>
               <div className='flex items-center gap-2'>
-                <canvas ref={canvasRef} className='h-64 w-full rounded-xl border' onClick={(e)=>onCanvasClick(e, key)} style={{ cursor: 'crosshair' }} />
+                <canvas ref={canvasRef} aria-label={`${name} brain slice; click to move crosshair`} className='h-64 w-full rounded-xl border' onClick={(e)=>onCanvasClick(e, key)} style={{ cursor: 'crosshair' }} />
               </div>
             </div>
           ))}
@@ -507,20 +512,21 @@ const coord2idx = (c_mm, n, axis) => {
       )}
 
       {/* map generation params */}
-      <div className='rounded-xl border p-3 text-sm'>
+      <div className='viewer__control-card viewer__control-card--smoothing'>
+        <div className='viewer__control-title'><span>MAP SMOOTHING</span><b>02</b></div>
         <label className='flex flex-col'>Gaussian FWHM:
           <input type='number' step='0.5' value={fwhm} onChange={e=>setFwhm(Number(e.target.value)||0)} className='w-28 rounded-lg border px-2 py-1'/>
-          <br />
         </label>
       </div>
 
       {/* overlay controls */}
-      <div className='rounded-xl border p-3 text-sm'>
+      <div className='viewer__control-card viewer__control-card--overlay'>
+        <div className='viewer__control-title'><span>OVERLAY</span><b>03</b></div>
         <label className='flex items-center gap-2'>
-          <span>Overlay alpha</span>
+          <span>Overlay opacity</span>
           <input type='range' min={0} max={1} step={0.05} value={overlayAlpha} onChange={e=>setOverlayAlpha(Number(e.target.value))} className='w-40' />
+          <output>{Math.round(overlayAlpha * 100)}%</output>
         </label>
-        <br />
       </div>
     </div>
   )

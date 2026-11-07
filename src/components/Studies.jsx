@@ -60,35 +60,72 @@ export function Studies ({ query }) {
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const pageRows = sorted.slice((page - 1) * pageSize, page * pageSize)
+  const firstVisible = sorted.length ? ((page - 1) * pageSize) + 1 : 0
+
+  const downloadCsv = () => {
+    const columns = [
+      ['study_id', 'Study ID'],
+      ['contrast_id', 'Contrast ID'],
+      ['year', 'Year'],
+      ['journal', 'Journal'],
+      ['title', 'Title'],
+      ['authors', 'Authors'],
+    ]
+    const cell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
+    const csv = [columns.map(([, label]) => cell(label)), ...sorted.map((row) => columns.map(([key]) => cell(row[key]))) ]
+      .map((row) => row.join(',')).join('\r\n')
+    const blobUrl = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    const slug = query.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 36) || 'results'
+    anchor.href = blobUrl
+    anchor.download = `lotus-bf-${slug}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+  }
 
   return (
     <div className='studies'>
       <div className='studies__header'>
-        <div>
+        <div className='studies__heading'>
+          <span className='studies__heading-icon' aria-hidden='true'>↗</span>
+          <div>
           <h2 className='card__title'>Studies</h2>
-          <p className='card__description'>Research papers matching your query</p>
+          <p className='card__description'>{query ? 'Research papers matching your query' : 'Evidence linked to your search will appear here.'}</p>
+          </div>
         </div>
-        {query && !loading && !err && <span className='result-count'>{sorted.length.toLocaleString()} results</span>}
+        {query && !loading && !err && (
+          <div className='studies__header-actions'>
+            <span className='result-count' aria-live='polite'><b>{sorted.length.toLocaleString()}</b> <span>STUDIES</span></span>
+            {sorted.length > 0 && <button type='button' className='studies__export' onClick={downloadCsv} title='Download all matching studies as CSV'>Export CSV <span aria-hidden='true'>↓</span></button>}
+          </div>
+        )}
       </div>
 
-
+      {!query && (
+        <div className='studies__empty'>
+          <span className='studies__empty-mark' aria-hidden='true'>01</span>
+          <div><b>Your evidence panel</b><p>Choose a concept, enter an MNI coordinate, or start with one of the example searches.</p></div>
+        </div>
+      )}
       {query && loading && (
-        <div className='grid gap-3 p-3'>
+        <div className='studies__loading'>
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className='h-10 animate-pulse rounded-lg bg-gray-100' />
+            <div key={i} className='studies__skeleton-row' />
           ))}
         </div>
       )}
 
       {query && err && (
-        <div className='mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700'>
+        <div className='studies__error' role='alert'>
           {err}
         </div>
       )}
 
       {query && !loading && !err && (
         <div className='overflow-auto'>
-          <table className='min-w-full text-sm'>
+          <table className='studies__table'>
             <thead className='sticky top-0 bg-gray-50 text-left'>
               <tr>
                 {[
@@ -97,25 +134,31 @@ export function Studies ({ query }) {
                   { key: 'title', label: 'Title' },
                   { key: 'authors', label: 'Authors' }
                 ].map(({ key, label }) => (
-                  <th key={key} className='cursor-pointer px-3 py-2 font-semibold' onClick={() => changeSort(key)}>
-                    <span className='inline-flex items-center gap-2'>
-                      {label}
-                      <span className='text-xs text-gray-500'>{sortKey === key ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
-                    </span>
+                  <th key={key} aria-sort={sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button type='button' className='studies__sort' onClick={() => changeSort(key)}>
+                      {label}<span aria-hidden='true'>{sortKey === key ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                    </button>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {pageRows.length === 0 ? (
-                <tr><td colSpan={4} className='px-3 py-4 text-gray-500'>No data</td></tr>
+                <tr><td colSpan={4} className='studies__no-data'>No studies match this query. Try a broader term or a different Boolean operator.</td></tr>
               ) : (
                 pageRows.map((r, i) => (
-                  <tr key={i} className={classNames(i % 2 ? 'bg-white' : 'bg-gray-50')}>
-                    <td className='whitespace-nowrap px-3 py-2 align-top'>{r.year ?? ''}</td>
-                    <td className='px-3 py-2 align-top'>{r.journal || ''}</td>
-                    <td className='max-w-[540px] px-3 py-2 align-top'><div className='truncate' title={r.title}>{r.title || ''}</div></td>
-                    <td className='px-3 py-2 align-top'>{r.authors || ''}</td>
+                  <tr key={r.id || `${r.study_id}-${i}`} className={classNames(i % 2 ? 'studies__row studies__row--alt' : 'studies__row')}>
+                    <td className='studies__year'>{r.year ?? '—'}</td>
+                    <td className='studies__journal'>{r.journal || '—'}</td>
+                    <td className='studies__title-cell'>
+                      <div className='studies__title' title={r.title}>{r.title || 'Untitled study'}</div>
+                      {/^\d+$/.test(String(r.study_id || '')) && (
+                        <a className='studies__record' href={`https://pubmed.ncbi.nlm.nih.gov/${r.study_id}/`} target='_blank' rel='noreferrer'>
+                          PMID {r.study_id}<span aria-hidden='true'>↗</span>
+                        </a>
+                      )}
+                    </td>
+                    <td className='studies__authors'>{r.authors || '—'}</td>
                   </tr>
                 ))
               )}
@@ -125,13 +168,13 @@ export function Studies ({ query }) {
       )}
 
       {query && !loading && !err && (
-        <div className='flex items-center justify-between border-t p-3 text-sm'>
-          <div>Total <b>{sorted.length}</b> records, page <b>{page}</b>/<b>{totalPages}</b></div>
-          <div className='flex items-center gap-2'>
-            <button disabled={page <= 1} onClick={() => setPage(1)} className='rounded-lg border px-2 py-1 disabled:opacity-40'>⏮</button>
-            <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className='rounded-lg border px-2 py-1 disabled:opacity-40'>Previous</button>
-            <button disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} className='rounded-lg border px-2 py-1 disabled:opacity-40'>Next</button>
-            <button disabled={page >= totalPages} onClick={() => setPage(totalPages)} className='rounded-lg border px-2 py-1 disabled:opacity-40'>⏭</button>
+        <div className='studies__pagination'>
+          <div><b>{firstVisible}–{Math.min(page * pageSize, sorted.length)}</b> of {sorted.length.toLocaleString()} records <span>·</span> Page {page} of {totalPages}</div>
+          <div className='studies__pagination-actions'>
+            <button aria-label='First page' disabled={page <= 1} onClick={() => setPage(1)}>«</button>
+            <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</button>
+            <button disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</button>
+            <button aria-label='Last page' disabled={page >= totalPages} onClick={() => setPage(totalPages)}>»</button>
           </div>
         </div>
       )}
