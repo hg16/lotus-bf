@@ -419,44 +419,47 @@ def terms(term: str = None):
     """
 
     with eng.begin() as conn:
+
+        # Search available terms
         if not term:
-    search = request.args.get("q", "").strip()
+            search = request.args.get("q", "").strip()
 
-    try:
-        limit = int(request.args.get("limit", 100))
-        limit = max(1, min(limit, 100))
-    except (TypeError, ValueError):
-        limit = 100
+            try:
+                limit = int(request.args.get("limit", 100))
+                limit = max(1, min(limit, 100))
+            except (TypeError, ValueError):
+                limit = 100
 
-    escaped_search = (
-        search.replace("!", "!!")
-              .replace("%", "!%")
-              .replace("_", "!_")
-    )
+            escaped_search = (
+                search.replace("!", "!!")
+                      .replace("%", "!%")
+                      .replace("_", "!_")
+            )
 
-    sql = text(f"""
-        SELECT DISTINCT {normalized} AS term
-        FROM ns.annotations_terms
-        WHERE {normalized} IS NOT NULL
-          AND {normalized} <> ''
-          AND {normalized} !~ '^[0-9]+$'
-          AND {normalized} ILIKE :pattern ESCAPE '!'
-        ORDER BY term
-        LIMIT :limit
-    """)
+            sql = text(f"""
+                SELECT DISTINCT {normalized} AS term
+                FROM ns.annotations_terms
+                WHERE {normalized} IS NOT NULL
+                  AND {normalized} <> ''
+                  AND {normalized} !~ '^[0-9]+$'
+                  AND {normalized} ILIKE :pattern ESCAPE '!'
+                ORDER BY term
+                LIMIT :limit
+            """)
 
-    rows = conn.execute(
-        sql,
-        {
-            "pattern": f"%{escaped_search}%",
-            "limit": limit
-        }
-    ).fetchall()
+            rows = conn.execute(
+                sql,
+                {
+                    "pattern": f"%{escaped_search}%",
+                    "limit": limit
+                }
+            ).fetchall()
 
-    result = [r.term for r in rows if r.term]
+            result = [r.term for r in rows if r.term]
 
-    return jsonify({"terms": result}), 200
+            return jsonify({"terms": result}), 200
 
+        # Find related terms
         limit, offset = _limit_offset()
         limit_clause, lp = _make_limit_clause(limit, offset)
 
@@ -520,7 +523,6 @@ def terms(term: str = None):
             "term": term,
             "related": related
         }), 200
-
 
 @bp.get("/query/<path:query_string>/studies")
 def mixed_query_studies(query_string: str):
