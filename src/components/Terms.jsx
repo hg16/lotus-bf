@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiUrl } from '../lib/api'
 
 export function Terms ({ onPickTerm }) {
@@ -9,61 +9,48 @@ export function Terms ({ onPickTerm }) {
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    const s = search.trim()
-
-    // Wait until the user enters a search term.
-    if (!s) {
-      setTerms([])
-      setLoading(false)
-      setErr('')
-      return
-    }
-
     let alive = true
     const ac = new AbortController()
 
-    const timer = window.setTimeout(async () => {
+    const load = async () => {
       setLoading(true)
       setErr('')
 
       try {
-        const url = apiUrl(
-          `/terms?q=${encodeURIComponent(s)}&limit=100`
-        )
-
-        const res = await fetch(url, {
+        const res = await fetch(apiUrl('/terms'), {
           signal: ac.signal
         })
 
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
         const data = await res.json()
 
         if (!alive) return
 
-        setTerms(
-          Array.isArray(data?.terms) ? data.terms : []
-        )
+        setTerms(Array.isArray(data?.terms) ? data.terms : [])
 
       } catch (e) {
         if (!alive || e.name === 'AbortError') return
-
         setErr(`Failed to fetch terms: ${e?.message || e}`)
-        setTerms([])
 
       } finally {
         if (alive) setLoading(false)
       }
-    }, 400)
+    }
+
+    load()
 
     return () => {
       alive = false
-      window.clearTimeout(timer)
       ac.abort()
     }
-  }, [search])
+  }, [])
+
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase()
+    if (!s) return terms
+    return terms.filter(t => t.toLowerCase().includes(s))
+  }, [terms, search])
 
   return (
     <div className='terms'>
@@ -86,12 +73,6 @@ export function Terms ({ onPickTerm }) {
         </button>
       </div>
 
-      {!search.trim() && (
-        <div className='terms__empty'>
-          Enter a word to search all available terms.
-        </div>
-      )}
-
       {loading && (
         <div className='terms__skeleton'>
           {Array.from({ length: 6 }).map((_, i) => (
@@ -106,15 +87,13 @@ export function Terms ({ onPickTerm }) {
         </div>
       )}
 
-      {!loading && !err && search.trim() && (
+      {!loading && !err && (
         <div className='terms__list'>
-          {terms.length === 0 ? (
-            <div className='terms__empty'>
-              No terms found
-            </div>
+          {filtered.length === 0 ? (
+            <div className='terms__empty'>No terms found</div>
           ) : (
             <ul className='terms__ul'>
-              {terms.map((t, idx) => (
+              {filtered.slice(0, 500).map((t, idx) => (
                 <li key={`${t}-${idx}`} className='terms__li'>
                   <a
                     href="#"
@@ -135,9 +114,9 @@ export function Terms ({ onPickTerm }) {
         </div>
       )}
 
-      {!loading && !err && search.trim() && (
+      {!loading && !err && (
         <div className='terms__count'>
-          {terms.length.toLocaleString()} matching terms
+          {filtered.length.toLocaleString()} matching terms
         </div>
       )}
 
