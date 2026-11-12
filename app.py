@@ -397,6 +397,7 @@ def debug_nii_meta():
     }), 200
 
 
+
 @bp.get("/terms")
 @bp.get("/terms/<term>")
 def terms(term: str = None):
@@ -425,10 +426,12 @@ def terms(term: str = None):
                 ORDER BY term
             """)
             rows = conn.execute(sql).fetchall()
+
             result = [
                 r.term for r in rows
-                if r.term and not re.fullmatch(r'\d+', r["term"])
+                if r.term and not re.fullmatch(r'\d+', r.term)
             ]
+
             return jsonify({"terms": result}), 200
 
         limit, offset = _limit_offset()
