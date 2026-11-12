@@ -396,73 +396,104 @@ def debug_nii_meta():
         "affine": [[float(x) for x in aff[i,:]] for i in range(4)]
     }), 200
 
+
 @bp.get("/terms")
 @bp.get("/terms/<term>")
-def terms(term: str=None):
-    """
-    - GET /terms -> return all terms (strip 'terms_abstract_tfidf__' prefix)
-    - GET /terms/<term> -> return related terms (co-occurrence/Jaccard)
-    """
+def terms(term: str = None):
+    """Return available terms or related terms using annotations_terms."""
     eng = get_engine()
+
+    normalized = """
+        lower(trim(regexp_replace(
+            replace(
+                CASE
+                    WHEN strpos(term, '__') > 0
+                    THEN substring(term FROM strpos(term, '__') + 2)
+                    ELSE term
+                END,
+                '_', ' '
+            ),
+            '[[:space:]]+', ' ', 'g'
+        )))
+    """
+
     with eng.begin() as conn:
-        conn.execute(text("SET search_path TO ns, public;"))
         if not term:
-            sql = text("""
-                SELECT DISTINCT
-                  CASE WHEN key LIKE 'terms_abstract_tfidf__%%'
-                       THEN SUBSTRING(key FROM char_length('terms_abstract_tfidf__')+1)
-                       ELSE key
-                  END AS term
-                FROM (
-                  SELECT jsonb_object_keys(terms) AS key
-                  FROM ns.annotations_json
-                ) j
+            sql = text(f"""
+                SELECT DISTINCT {normalized} AS term
+                FROM ns.annotations_terms
                 ORDER BY term
             """)
             rows = conn.execute(sql).fetchall()
-            terms = [r.term for r in rows if not re.match(r'^\d', (r.term or ""))]
-            return jsonify({"terms": terms}), 200
-        else:
-            limit, offset = _limit_offset()
-            limit_clause, lp = _make_limit_clause(limit, offset)
-            sql = text(f"""
-                WITH a AS (
-                  SELECT DISTINCT study_id
-                  FROM ns.annotations_json
-                  WHERE (terms ? :t) OR (terms ? :tp)
-                ),
-                co AS (
-                  SELECT k.term, COUNT(DISTINCT aj.study_id) AS co_count
-                  FROM ns.annotations_json aj
-                  JOIN LATERAL jsonb_object_keys(aj.terms) AS k(term) ON TRUE
-                  WHERE aj.study_id IN (SELECT study_id FROM a)
-                    AND k.term NOT IN (:t, :tp)
-                  GROUP BY k.term
-                ),
-                a_cnt AS (SELECT COUNT(*) AS n FROM a),
-                b_cnt AS (
-                  SELECT k.term, COUNT(DISTINCT aj.study_id) AS n
-                  FROM ns.annotations_json aj
-                  JOIN LATERAL jsonb_object_keys(aj.terms) AS k(term) ON TRUE
-                  GROUP BY k.term
-                )
+            result = [
+                r.term for r in rows
+                if r.term and not re.match(r'^\\d', r.term)
+            ]
+            return jsonify({"terms": result}), 200
+
+        limit, offset = _limit_offset()
+        limit_clause, lp = _make_limit_clause(limit, offset)
+
+        search_term = term.replace("_", " ").strip().lower()
+
+        sql = text(f"""
+            WITH normalized_terms AS (
                 SELECT
-                  CASE WHEN co.term LIKE 'terms_abstract_tfidf__%%'
-                       THEN SUBSTRING(co.term FROM char_length('terms_abstract_tfidf__')+1)
-                       ELSE co.term
-                  END AS term,
-                  co.co_count,
-                  (co.co_count::float) / NULLIF((a_cnt.n + b_cnt.n - co.co_count), 0) AS jaccard
-                FROM co
-                CROSS JOIN a_cnt
-                JOIN b_cnt ON b_cnt.term = co.term
-                ORDER BY jaccard DESC NULLS LAST, co_count DESC, term ASC
-                {limit_clause}
-            """)
-            rows = conn.execute(sql, {"t": term, "tp": PREFIX + term, **lp}).mappings().all()
-            rel = [dict(r) for r in rows]
-            rel = [d for d in rel if not re.match(r'^\d', (d.get("term") or ""))]
-            return jsonify({"term": term, "related": rel}), 200
+                    study_id,
+                    {normalized} AS term
+                FROM ns.annotations_terms
+            ),
+            a AS (
+                SELECT DISTINCT study_id
+                FROM normalized_terms
+                WHERE term = :t
+            ),
+            co AS (
+                SELECT
+                    nt.term,
+                    COUNT(DISTINCT nt.study_id) AS co_count
+                FROM normalized_terms nt
+                JOIN a ON a.study_id = nt.study_id
+                WHERE nt.term <> :t
+                GROUP BY nt.term
+            ),
+            a_cnt AS (
+                SELECT COUNT(*) AS n FROM a
+            ),
+            b_cnt AS (
+                SELECT term, COUNT(DISTINCT study_id) AS n
+                FROM normalized_terms
+                GROUP BY term
+            )
+            SELECT
+                co.term,
+                co.co_count,
+                co.co_count::float /
+                    NULLIF(a_cnt.n + b_cnt.n - co.co_count, 0)
+                    AS jaccard
+            FROM co
+            CROSS JOIN a_cnt
+            JOIN b_cnt ON b_cnt.term = co.term
+            ORDER BY jaccard DESC NULLS LAST,
+                     co_count DESC,
+                     co.term ASC
+            {limit_clause}
+        """)
+
+        rows = conn.execute(
+            sql,
+            {"t": search_term, **lp}
+        ).mappings().all()
+
+        related = [
+            dict(r) for r in rows
+            if r["term"] and not re.match(r'^\\d', r["term"])
+        ]
+
+        return jsonify({
+            "term": term,
+            "related": related
+        }), 200
 
 
 @bp.get("/query/<path:query_string>/studies")
