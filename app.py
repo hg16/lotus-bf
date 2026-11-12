@@ -398,10 +398,12 @@ def debug_nii_meta():
 
 
 
+
 @bp.get("/terms")
 @bp.get("/terms/<term>")
 def terms(term: str = None):
     """Return available terms or related terms using annotations_terms."""
+
     eng = get_engine()
 
     normalized = """
@@ -420,7 +422,7 @@ def terms(term: str = None):
 
     with eng.begin() as conn:
 
-        # Search available terms
+        # Search available terms from the precomputed lookup table
         if not term:
             search = request.args.get("q", "").strip()
 
@@ -428,7 +430,7 @@ def terms(term: str = None):
                 limit = int(request.args.get("limit", 5000))
                 limit = max(1, min(limit, 5000))
             except (TypeError, ValueError):
-                limit = 100
+                limit = 5000
 
             escaped_search = (
                 search.replace("!", "!!")
@@ -436,13 +438,10 @@ def terms(term: str = None):
                       .replace("_", "!_")
             )
 
-            sql = text(f"""
-                SELECT DISTINCT {normalized} AS term
-                FROM ns.annotations_terms
-                WHERE {normalized} IS NOT NULL
-                  AND {normalized} <> ''
-                  AND {normalized} !~ '^[0-9]+$'
-                  AND {normalized} ILIKE :pattern ESCAPE '!'
+            sql = text("""
+                SELECT term
+                FROM ns.annotations_terms_lookup
+                WHERE term ILIKE :pattern ESCAPE '!'
                 ORDER BY term
                 LIMIT :limit
             """)
@@ -459,7 +458,7 @@ def terms(term: str = None):
 
             return jsonify({"terms": result}), 200
 
-        # Find related terms
+        # Find related terms — existing logic unchanged
         limit, offset = _limit_offset()
         limit_clause, lp = _make_limit_clause(limit, offset)
 
@@ -523,6 +522,7 @@ def terms(term: str = None):
             "term": term,
             "related": related
         }), 200
+
 
 @bp.get("/query/<path:query_string>/studies")
 def mixed_query_studies(query_string: str):
