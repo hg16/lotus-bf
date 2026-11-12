@@ -420,19 +420,42 @@ def terms(term: str = None):
 
     with eng.begin() as conn:
         if not term:
-            sql = text(f"""
-                SELECT DISTINCT {normalized} AS term
-                FROM ns.annotations_terms
-                ORDER BY term
-            """)
-            rows = conn.execute(sql).fetchall()
+    search = request.args.get("q", "").strip()
 
-            result = [
-                r.term for r in rows
-                if r.term and not re.fullmatch(r'\d+', r.term)
-            ]
+    try:
+        limit = int(request.args.get("limit", 100))
+        limit = max(1, min(limit, 100))
+    except (TypeError, ValueError):
+        limit = 100
 
-            return jsonify({"terms": result}), 200
+    escaped_search = (
+        search.replace("!", "!!")
+              .replace("%", "!%")
+              .replace("_", "!_")
+    )
+
+    sql = text(f"""
+        SELECT DISTINCT {normalized} AS term
+        FROM ns.annotations_terms
+        WHERE {normalized} IS NOT NULL
+          AND {normalized} <> ''
+          AND {normalized} !~ '^[0-9]+$'
+          AND {normalized} ILIKE :pattern ESCAPE '!'
+        ORDER BY term
+        LIMIT :limit
+    """)
+
+    rows = conn.execute(
+        sql,
+        {
+            "pattern": f"%{escaped_search}%",
+            "limit": limit
+        }
+    ).fetchall()
+
+    result = [r.term for r in rows if r.term]
+
+    return jsonify({"terms": result}), 200
 
         limit, offset = _limit_offset()
         limit_clause, lp = _make_limit_clause(limit, offset)
