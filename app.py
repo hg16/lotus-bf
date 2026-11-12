@@ -427,7 +427,7 @@ def terms(term: str = None):
             rows = conn.execute(sql).fetchall()
             result = [
                 r.term for r in rows
-                if r.term and not re.match(r'^\\d', r.term)
+                if r.term and not re.fullmatch(r'\d+', r["term"])
             ]
             return jsonify({"terms": result}), 200
 
@@ -487,7 +487,7 @@ def terms(term: str = None):
 
         related = [
             dict(r) for r in rows
-            if r["term"] and not re.match(r'^\\d', r["term"])
+            if r["term"] and not re.fullmatch(r'\d+', r["term"])
         ]
 
         return jsonify({
