@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+
+import { useEffect, useState } from 'react'
 import { apiUrl } from '../lib/api'
 
 export function Terms ({ onPickTerm }) {
@@ -8,37 +9,64 @@ export function Terms ({ onPickTerm }) {
   const [err, setErr] = useState('')
 
   useEffect(() => {
+    const s = search.trim()
+
+    // Wait until the user enters a search term.
+    if (!s) {
+      setTerms([])
+      setLoading(false)
+      setErr('')
+      return
+    }
+
     let alive = true
     const ac = new AbortController()
-    const load = async () => {
+
+    const timer = window.setTimeout(async () => {
       setLoading(true)
       setErr('')
+
       try {
-        const res = await fetch(apiUrl('/terms'), { signal: ac.signal })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const url = apiUrl(
+          `/terms?q=${encodeURIComponent(s)}&limit=100`
+        )
+
+        const res = await fetch(url, {
+          signal: ac.signal
+        })
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`)
+        }
+
         const data = await res.json()
+
         if (!alive) return
-        setTerms(Array.isArray(data?.terms) ? data.terms : [])
+
+        setTerms(
+          Array.isArray(data?.terms) ? data.terms : []
+        )
+
       } catch (e) {
-        if (!alive) return
+        if (!alive || e.name === 'AbortError') return
+
         setErr(`Failed to fetch terms: ${e?.message || e}`)
+        setTerms([])
+
       } finally {
         if (alive) setLoading(false)
       }
-    }
-    load()
-    return () => { alive = false; ac.abort() }
-  }, [])
+    }, 400)
 
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase()
-    if (!s) return terms
-    return terms.filter(t => t.toLowerCase().includes(s))
-  }, [terms, search])
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+      ac.abort()
+    }
+  }, [search])
 
   return (
     <div className='terms'>
-      {/* Removed internal <h2> to avoid double "Terms" header. The bold title now comes from App.jsx card__title. */}
 
       <div className='terms__controls'>
         <input
@@ -48,6 +76,7 @@ export function Terms ({ onPickTerm }) {
           placeholder='Search terms…'
           className='input'
         />
+
         <button
           type='button'
           onClick={() => setSearch('')}
@@ -56,6 +85,12 @@ export function Terms ({ onPickTerm }) {
           Clear
         </button>
       </div>
+
+      {!search.trim() && (
+        <div className='terms__empty'>
+          Enter a word to search all available terms.
+        </div>
+      )}
 
       {loading && (
         <div className='terms__skeleton'>
@@ -71,31 +106,41 @@ export function Terms ({ onPickTerm }) {
         </div>
       )}
 
-      {!loading && !err && (
+      {!loading && !err && search.trim() && (
         <div className='terms__list'>
-          {filtered.length === 0 ? (
-            <div className='terms__empty'>No terms found</div>
+          {terms.length === 0 ? (
+            <div className='terms__empty'>
+              No terms found
+            </div>
           ) : (
             <ul className='terms__ul'>
-              {filtered.slice(0, 500).map((t, idx) => (
+              {terms.map((t, idx) => (
                 <li key={`${t}-${idx}`} className='terms__li'>
                   <a
-  href="#"
-  className='terms__name'
-  title={t}
-  aria-label={`Add term ${t}`}
-  onClick={(e) => { e.preventDefault(); onPickTerm?.(t); }}
->
-  {t}
-</a>
+                    href="#"
+                    className='terms__name'
+                    title={t}
+                    aria-label={`Add term ${t}`}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      onPickTerm?.(t)
+                    }}
+                  >
+                    {t}
+                  </a>
                 </li>
               ))}
             </ul>
           )}
         </div>
       )}
-      {!loading && !err && <div className='terms__count'>{filtered.length.toLocaleString()} matching terms</div>}
+
+      {!loading && !err && search.trim() && (
+        <div className='terms__count'>
+          {terms.length.toLocaleString()} matching terms
+        </div>
+      )}
+
     </div>
   )
 }
-
