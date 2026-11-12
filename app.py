@@ -425,8 +425,8 @@ def terms(term: str = None):
             search = request.args.get("q", "").strip()
 
             try:
-                limit = int(request.args.get("limit", 100))
-                limit = max(1, min(limit, 100))
+                limit = int(request.args.get("limit", 5000))
+                limit = max(1, min(limit, 5000))
             except (TypeError, ValueError):
                 limit = 100
 
